@@ -8,56 +8,135 @@ library(lme4) #glmer
 library(tidyverse)
 library(Rmisc)
 
-datos<-read_delim("data/Onys_lml.csv",delim=";")
-
-# cercania (%: lejos | cerca) ~
-# tratamiento(dep1|dep2|dep3|neofilia)
-# tamaño
-# Ony|Rep
-# Orden(1-5)
-
-datos
+# importar datos ----
 
 datos <- datos %>%
   mutate(Tratamiento_3cats = ifelse(Tratamiento %in% c("C", "A", "N"), "Dep", Tratamiento))
-colnames(datos)
+datos
 
-hist(datos$Despl_total)
-View(datos)
+# transformar: Despl y Cerca binarios ----
+datos = datos %>%
+  mutate(Despl_total_binario=as.numeric(Despl_total>0),
+         Cerca_total_binario=as.numeric(Cerca_total>0),
+         EnJaula_binario=as.numeric(EnJaula>0),
+         jaula_cerca_binario=as.numeric(jaula_cerca>0))
+datos
 
-
+# explorar: NAs ----
 sapply(datos, function(x)
   sum(is.na(x)))
 
-datos = datos%>%
-  mutate(Despl_total_binario=Despl_total>0)
-
-# explorar: cuantos datos tenemos
-￼table(datos$Ony)
+# explorar: cuantos datos tenemos ----
+table(datos$Ony)
 table(datos$Ony,datos$Tratamiento)
 table(datos$Ony,datos$Tratamiento_3cats)
-# explorar: distribucion de variables
+
+# explorar: distribucion de variables ----
 
 # Despl
 datos %>%
   ggplot(aes(Despl_total))+
   geom_histogram()
+# Despl binario
 datos %>%
-  ggplot(aes(Despl_total))+
-  geom_density()
+  ggplot(aes(Despl_total_binario))+
+  geom_histogram()
 
 # Cerca
 datos %>%
   ggplot(aes(Cerca_total))+
   geom_histogram()
+# Cerca binario
 datos %>%
-  ggplot(aes(Cerca_total))+
-  geom_density()
+  ggplot(aes(Cerca_total_binario))+
+  geom_histogram()
 
 
-table(datos$Despl_total)
-# DESPLAZAMIENTO ####
+#### secundarias:
+# EnJaula
+datos %>%
+  ggplot(aes(EnJaula))+
+  geom_histogram()
+# EnJaula binario
+datos %>%
+  ggplot(aes(EnJaula_binario))+
+  geom_histogram()
 
+# Modelos Desplazamiento: GLMMs ----
+# Interpr. Biologica: comportamiento antidepredatorio dependiendo del depredador
+m_tratamiento_glmer =   glmer(Despl_total ~ Tratamiento+1|Ony,
+                              family = "binomial",
+                              data = datos)
+# Interpr. Biologica: se mueve mas en alguno entre: Ex Neo y Dep.
+m_tratamiento3cats_glmer =   glmer(Despl_total ~ Tratamiento_3cats+1|Ony,
+                              family = "binomial",
+                              data = datos)
+# Interpr. Biologica: se mueven al principio, una vez que conocen el chante se ahuevan
+m_orden_glmer =   glmer(Despl_total ~ Orden+1|Ony,
+                                   family = "binomial",
+                                   data = datos)
+
+# Interpr. Biologica: les vale verga nuestros tratamientos y no importa su tamano(edad). #elamornotieneedadnipuedeserdepredado
+m_nulo_glmer =   glmer(Despl_total ~ 1|Ony ,
+                       family = "binomial",
+                       data = datos)
+# no converge!!!! tampoco con Despl_total_binario
+# Interpr. Biologica: tal vez los grandes se mueven en frente del depredador y los peques no, y tal vez en Neo y Expl se comportan iguales sin importar el tamano
+# nota: yo le apostaba a este ):
+m_tratamientotamano_glmer =   glmer(Despl_total ~ Tratamiento_3cats*Tamano+1|Ony ,
+                                    family = "binomial",
+                                    data = datos)
+# binario tampoco:
+m_tratamientotamano_glmer =   glmer(Despl_total_binario ~ Tratamiento_3cats*Tamano+1|Ony ,
+                                    family = "binomial",
+                                    data = datos)
+
+# Interpr. Biologica: tratamiento importante si se controla por orden. No estoy seguro si asi se controla esto
+# no converge ):
+m_tratamientocontrolandoorden_glmer =   glmer(Despl_total_binario ~ Tratamiento+(1|Ony)+(1|Orden) ,
+                                    family = "binomial",
+                                    data = datos)
+m_tamanocontrolandoorden_glmer =   glmer(Despl_total_binario ~ Tamano+(1|Ony)+(1|Orden) ,
+                                              family = "binomial",
+                                              data = datos)
+m_tratamiento3catscontrolandoorden_glmer =   glmer(Despl_total_binario ~ Tratamiento_3cats+(1|Ony)+(1|Orden),
+                                              family = "binomial",
+                                              data = datos)
+m_tratamientotamano_controlandoorden_glmer =   glmer(Despl_total_binario ~ Tratamiento*Tamano +(1|Ony)+(1|Orden),
+                                                   family = "binomial",
+                                                   data = datos)
+m_tratamiento3catstamano_controlandoorden_glmer =   glmer(Despl_total_binario ~ Tratamiento_3cats*Tamano+ (1|Ony)+(1|Orden),
+                                                     family = "binomial",
+                                                     data = datos)
+
+
+# Interpr. biologica: Tal vez el comportamiento depende solo del tamano? 
+# no se si este tiene sentido porque los tamanos son propiedades de los onys que se estan tomando como efecto aleatorio
+m_tamano_glmer =   glmer(Despl_total ~ Tamano+1|Ony,
+                                    family = "binomial",
+                                    data = datos)
+# Desplazamiento GLMMs Model Selection ----
+AIC(m_nulo_glmer)
+
+AIC(m_nulo_glmer)-AIC(m_tamano_glmer)
+AIC(m_nulo_glmer)-AIC(m_tratamiento_glmer)
+AIC(m_nulo_glmer)-AIC(m_tratamientotamano_glmer)
+AIC(m_nulo_glmer)-AIC(m_tratamiento3cats_glmer)
+AIC(m_nulo_glmer)-AIC(m_orden_glmer)
+AIC(m_nulo_glmer)-AIC(m_tratamientocontrolandoorden_glmer)
+AIC(m_nulo_glmer)-AIC(m_tratamientocontrolandoorden_glmer)
+AIC(m_nulo_glmer)-AIC(m_nulo_glmer)
+# 1 ganador: m_orden_glmer. de fijo se cansaron los onysy el orden fue super importante. Recomendacion: no usar este dise;o experimental?
+# 2 ganador: m_tratamiento3cats_glmer
+
+# si tomaramos el otro nulo como base
+AIC(m_nulo_controlandoorden_glmer)-AIC(m_tratamientocontrolandoorden_glmer)
+AIC(m_nulo_controlandoorden_glmer)-AIC(m_tratamiento3catscontrolandoorden_glmer)
+AIC(m_nulo_controlandoorden_glmer)-AIC(m_tratamientotamano_controlandoorden_glmer)
+AIC(m_nulo_controlandoorden_glmer)-AIC(m_tratamiento3catstamano_controlandoorden_glmer)
+AIC(m_nulo_controlandoorden_glmer)-AIC(m_tamanocontrolandoorden_glmer)
+
+# Modelos Desplazamiento: GLM ----
 m_tratamiento =   glm(Despl_total_binario ~ Tratamiento ,
              family = "binomial",
              data = datos)
@@ -83,8 +162,6 @@ m_tamanotratamiento3catsony =   glm(Despl_total_binario ~ Tratamiento_3cats*Ony 
                                  family = "binomial",
                                  data = datos)
 
-
-
 m_ony =   glm(Despl_total_binario ~ Ony ,
                                  family = "binomial",
                                  data = datos)
@@ -93,13 +170,21 @@ m_nulo =   glm(Despl_total_binario ~1 ,
                  family = "binomial",
                  data = datos)
 
-m_tratamiento$aic
-m_orden$aic
-m_tamano$aic
-m_
-m_nulo$aic
-m_tratamiento3cats$aic
 
+# model selection ----
+m_nulo$aic
+# delta aic: mayor que 2?
+m_nulo$aic-m_tratamiento$aic
+m_nulo$aic-m_orden$aic
+m_nulo$aic-m_tamano$aic
+m_nulo$aic-m_tamanotratamiento$aic
+m_nulo$aic-m_tamanotratamiento3cats$aic
+m_nulo$aic-m_tamanotratamiento3catsony$aic
+m_nulo$aic-m_tratamiento3cats$aic
+m_nulo$aic-m_ony$aic
+
+m_nulo$aic - AIC(m_tratamiento_glmer)
+# depende del ony y no es por su tamano
 
 ?m4 =   glm(Despl_total_binario ~ Orden ,
            family = "binomial",
